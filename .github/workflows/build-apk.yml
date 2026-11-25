@@ -14,6 +14,10 @@ on:
         description: 'Website URL'
         required: true
         default: 'https://google.com'
+      app_icon:
+        description: 'Base64 App Icon'
+        required: false
+        default: ''
 
 jobs:
   build:
@@ -26,8 +30,18 @@ jobs:
           java-version: '17'
 
       - name: Generate Android WebView Project
+        env:
+          ICON_B64: ${{ github.event.inputs.app_icon }}
         run: |
-          mkdir -p app/src/main/java/com/aura/webapp app/src/main/res/values
+          mkdir -p app/src/main/java/com/aura/webapp app/src/main/res/values app/src/main/res/mipmap-xxxhdpi
+
+          # কাস্টম লোগো থাকলে ডিকোড করা, নাহলে ডিফল্ট নীল আইকন তৈরি করা
+          if [ -n "$ICON_B64" ]; then
+            echo "$ICON_B64" | base64 -d > app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          else
+            echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          fi
+
           cat << 'EOF' > settings.gradle
           rootProject.name = "Web2APK"
           include ':app'
@@ -70,7 +84,12 @@ jobs:
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.INTERNET" />
-              <application android:label="@string/app_name" android:usesCleartextTraffic="true">
+              <application
+                  android:label="@string/app_name"
+                  android:icon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher"
+                  android:theme="@android:style/Theme.NoTitleBar"
+                  android:usesCleartextTraffic="true">
                   <activity android:name="com.aura.webapp.MainActivity" android:exported="true">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
@@ -90,16 +109,25 @@ jobs:
           import android.webkit.WebViewClient;
 
           public class MainActivity extends Activity {
+              private WebView webView;
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
-                  WebView webView = new WebView(this);
+                  webView = new WebView(this);
                   WebSettings settings = webView.getSettings();
                   settings.setJavaScriptEnabled(true);
                   settings.setDomStorageEnabled(true);
                   webView.setWebViewClient(new WebViewClient());
                   webView.loadUrl("${{ github.event.inputs.web_url }}");
                   setContentView(webView);
+              }
+              @Override
+              public void onBackPressed() {
+                  if (webView != null && webView.canGoBack()) {
+                      webView.goBack();
+                  } else {
+                      super.onBackPressed();
+                  }
               }
           }
           EOF
@@ -114,3 +142,4 @@ jobs:
         with:
           name: ${{ github.event.inputs.app_name }}-APK
           path: app/build/outputs/apk/debug/app-debug.apk
+          
